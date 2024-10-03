@@ -1,0 +1,166 @@
+Descargar JSON/XML y crear directorio y subir a dicho directorio
+====================================================================
+def encoded=""
+String content=""
+def archivo=""
+pipeline {
+    agent any
+    environment {
+        LDESPLIEGUE = 'ONLY_ONE'
+    }
+    parameters { 
+        choice(name: 'DEPLOY', choices: ['DESA', 'INTRAGES', 'USOOFICIAL', 'EXTRANET'], description: 'Select an option')
+        choice(name: 'PROYECT', choices: ['WSP_ACCEDA','WSP_AEAT','WSP_AGT','WSP_API','WSP_ARCHIVA','WSP_BALMIS','WSP_BALMIS_Horus','WSP_BALMIS_Multicita','WSP_CARPETA_CIUDADANO','WSP_CODICE','WSP_CORPORATIVO','WSP_CSN','WSP_CVCDEF','WSP_CVD','WSP_DCORE','WSP_DICODEF_Servicios','WSP_DIGITADEF','WSP_EMS','WSP_DOCUMENTUM','WSP_GEISER','WSP_ISFAS','WSP_MSCBS','WSP_MSCBS_ISFAS','WSP_Portal_Personal','WSP_RegistroElectronico','WSP_SAPROMIL','WSP_SCSP','WSP_SERMAS','WSP_SERMAS_MANTENIMIENTO_CITAS','WSP_SICCOCEN','WSP_SIDAE','WSP_SIGECAR','WSP_SIGLE-Prov','WSP_SIGLE','WSP_SIGLE_EXTERNOS','WSP_SIGMAWEB','WSP_SIPERDEF','WSP_SIPERDEF_SICSPSE2','WSP_SSRL','WSP_SSRL_ConsingmentService','WSP_TELCON','WSP_TE_EXTRA','WSP_TramitacionEletronica','MPG_AMPS-SLOG','MPG_ACCEDA','MPG_BALANCEO_USOF','MPG_API_HTTP','MPG_CMIS_AUTEN_SSL','MPG_DCORE_ESB','MPG_Publica_WSDL_SERMAS','MPG_SSRL_IN','MPG_Entrada','MPG_DCORE_REPEMI','MPG_DCORE_REPEREST','MPG_DCORE_SOAP','MPG_ISFAS','MPG_ServiciosREST','MPG_SIUCOM','MPG_SECUREBK_SFTP','MPG_SSRL','MPGW-DICOM'], description: 'Select an proyect')
+        string(name: 'SCANS', defaultValue: 'vacio', description: 'Insert Scans')
+    }
+    
+    
+stages {
+    stage ('Select Domain'){
+    steps{
+    script{
+        def entornos=""
+        echo "${env.LDESPLIEGUE}  -- ${params.DEPLOY} ${params.PROYECT} ${params.SCANS}" 
+         if(params.DEPLOY  == "DESA"){
+			 entornos = "testIBM\nARTEC\nDIVINDES\nLABORATORIO"
+         }else if(params.DEPLOY  == "INTRAGES"){
+			 entornos = "testIBM\nPREUSOF\nPREPRODUCCION\nPRODUCCION"
+         }else if(params.DEPLOY  == "USOOFICIAL"){
+			 entornos = "testIBM\nPRODUCCION"
+         }else if(params.DEPLOY  == "EXTRANET"){
+			 entornos = "testIBM\nPREPRODUCCION\nPRODUCCION"
+         }
+			entornoSelect  = input(message: 'Interacción Usuario requerido',ok: 'Seleccionar',
+            parameters: [choice(name: 'Elección Entorno', choices: "${entornos}", description: '¿Sobre qué entorno deseas desplegar?')])
+        
+        // Save to variables. Default to empty string if not found.
+        inputConfig = entornoSelect
+        echo "Domain: ${inputConfig}"
+        selectedOptions = env.LDESPLIEGUE
+        appSelect = params.PROYECT
+        echo "You selected: ${selectedOptions}"
+    }
+    }
+    }
+    stage ('Download Repositorio'){
+    steps{
+    script{
+        pathWS = pwd()
+        echo "You selected: download Repositorio ${params.DEPLOY}"
+        echo "${entornoSelect}"
+        def proyecto = params.PROYECT.toLowerCase()
+        withCredentials([string(credentialsId: 'urlDatapowerGit', variable: 'SECRET_TEXT')]) {
+                       
+            def urlRepo="${SECRET_TEXT}/${proyecto}.git"
+            echo "${urlRepo}"
+            sh "git clone --branch develop ${urlRepo}"
+            echo "El texto secreto es: ${SECRET_TEXT}"
+            echo"******************************************"
+            echo"****Descarga Proyecto en su rama Develop *"
+            echo"******************************************"
+        }
+        
+       
+        
+        
+         withCredentials([string(credentialsId: 'codeBase64', variable: 'SECRET_TEXT')]) {
+             
+            def pathFile = "${proyecto}/local/disk/${params.PROYECT}/configurations/${params.DEPLOY}/${entornoSelect}"
+            echo"****   ${pathWS}/${pathFile}   *"
+            sh "cd ${pathWS}/${pathFile}"
+           
+            def filePathJSON= "${pathWS}/${pathFile}/constantURL.json"
+            def fileJSON = new File(filePathJSON)
+            def filePathXML = "${pathWS}/${pathFile}/constantURL.xml"
+            def fileXML = new File(filePathXML)
+            
+            if (fileJSON.exists()) {
+               println "El fichero JSON existe."
+               archivo = "constantURL.json"
+            }else  if (fileXML.exists()) {
+                println "El fichero XML existe."
+                archivo = "constantURL.xml"
+                
+            } else {
+              
+                echo"******************************************"
+                echo"****  El fichero No existe o ruta   ******"
+                echo"******************************************"
+                currentBuild.result = 'ABORTED'
+                throw new hudson.AbortException('')
+            }
+            
+            content = new File("${pathWS}/${pathFile}/${archivo}").text
+        
+            echo"******************************************"
+            echo"****    fichero Localizado          ******"
+            echo"******************************************"
+			
+			def fileBytes = content.bytes
+            // Codificar los bytes a base64
+            def base64Encoded = fileBytes.encodeBase64().toString()
+			
+            echo"******************************************"
+            echo"****  base64_encoded_data     *"
+            echo"******************************************"
+            encoded = "${base64Encoded}" 
+            echo"******************************************"
+            echo"****   Fichero codificado en Base 64     *"
+            echo"******************************************"
+        }
+        
+     
+    }
+    }
+    }
+    
+    stage ('Crear directorio en Datapower'){
+      steps{
+        script{
+           echo "Directorio de Datapower"
+
+
+       sh """
+curl --location 'https://srvcceadtpwl01d:5554/mgmt/actionqueue/testIBM' --header 'Authorization:   Basic amVua2luczpqazIwMjQu' --header 'Content-Type: application/json' \
+--data '{
+    "CreateDir": {
+        "Dir": "local:///disk/${params.PROYECT}/configurations"
+    }
+}'
+       """
+        }
+      }
+    }
+    
+    stage ('upload File directorio en Datapower'){
+      steps{
+        script{
+           echo "upload File directorio en Datapower"
+           
+ withCredentials([string(credentialsId: 'codeBase64', variable: 'SECRET_TEXT')]) {
+
+       sh """
+curl --location --request PUT 'https://srvcceadtpwl01d:5554/mgmt/filestore/testIBM/local/disk/${params.PROYECT}/configurations/${archivo}' \
+--header 'Authorization:   Basic amVua2luczpqazIwMjQu' \
+--header 'Content-Type: application/json' \
+--data '{
+            "file": {
+                "name":"crearpolitica.cfg",
+                "content":"${encoded}"
+			}
+}'
+       """
+}
+           
+        }
+      }
+    }
+    
+    }
+    post {
+        always {
+            cleanWs() 
+        }
+    }
+}
+

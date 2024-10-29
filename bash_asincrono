@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Definir función de tarea simulando un proceso largo
+tarea() {
+  local num=$1
+  echo "Iniciando tarea $num..."
+  sleep $((RANDOM % 5 + 1))  # Duerme de 1 a 5 segundos de forma aleatoria
+  echo "Tarea $num completada"
+}
+
+# Ejecutar tareas en paralelo
+tarea 1 &
+pid1=$!  # Guarda el PID de la tarea 1
+
+tarea 2 &
+pid2=$!  # Guarda el PID de la tarea 2
+
+tarea 3 &
+pid3=$!  # Guarda el PID de la tarea 3
+
+# Espera a que todas las tareas terminen
+wait $pid1
+wait $pid2
+wait $pid3
+
+echo "Todas las tareas completadas."
+
+=======================================================
+chmod +x script_asincrono.sh
+./script_asincrono.sh
+

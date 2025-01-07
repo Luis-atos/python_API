@@ -1,8 +1,82 @@
-================== Metodo de ejecucion ========
+================== Metodo de ejecucion con python y shellScript========
 python3 <nombre_Funcion> <Componente_Repositorio> <Repositorio>
 python3 nexus_artifacts2.py "LUIS_SIADIDEF_AP" "snapshots"
 =================================================================
+===== shellScript ==============
 
+#!/bin/bash
+
+# Parámetros
+COMPONENTE="$1"
+REPOSITORY_NAME="$2"
+NEXUS_URL="https://nexus.servdev.mdef.es"
+USERNAME="deployjenkins"
+PASSWORD="cc0msi2016."
+
+
+# Endpoint de búsqueda de REPOs
+ENDPOINT="$NEXUS_URL/service/rest/v1/assets?repository=$REPOSITORY_NAME"
+
+# Parámetro adicional para snapshots
+PARAMS=""
+if [ "$REPOSITORY_NAME" == "snapshots" ]; then
+  PARAMS="&q=PruebaTest/PruebaTest"
+fi
+
+# Inicialización
+FOLDERS=()
+CONTINUATION_TOKEN=""
+
+while true; do
+  # Construcción de la URL con continuationToken si existe
+  URL="$ENDPOINT$PARAMS"
+  if [ -n "$CONTINUATION_TOKEN" ]; then
+    URL="$URL&continuationToken=$CONTINUATION_TOKEN"
+  fi
+
+  # Solicitud HTTP
+  #echo "curl -s -u $USERNAME:$PASSWORD $URL"
+  RESPONSE=$(curl -s -u "$USERNAME:$PASSWORD" "$URL")
+  # Validar respuesta HTTP
+  if [ $? -ne 0 ]; then
+    echo "Error: Falló la solicitud HTTP."
+    exit 1
+  fi
+
+  # Verificar si hubo un error en la respuesta
+  if echo "$RESPONSE" | grep -q '"status":'; then
+    STATUS_CODE=$(echo "$RESPONSE" | grep '"status":' | awk -F: '{print $2}' | tr -d ', ')
+    if [ "$STATUS_CODE" -ne 200 ]; then
+      echo "Error: Código de estado $STATUS_CODE - $(echo "$RESPONSE" | grep '"message":' | awk -F: '{print $2}' | tr -d '", ')"
+      exit 1
+    fi
+  fi
+
+  # Extraer IDs de los ítems que coinciden con el REPOsitorio
+  #ITEMS=$(echo "$RESPONSE" | jq -r '.items[].id')
+  #ITEMS=$(echo "$RESPONSE" | jq -r '.items[] | select(.path | test($COMPONENTE; "i")) | .id')
+
+  ITEMS=$(echo "$RESPONSE" | jq -r --arg comp "$COMPONENTE" '.items[] | select(.path | test($comp; "i")) | .id')
+
+  FOLDERS+=($ITEMS)
+  CONTINUATION_TOKEN=$(echo "$RESPONSE" | jq -r '.continuationToken')
+
+  if [ -z "$CONTINUATION_TOKEN" ]; then
+    break
+  fi
+done
+
+# Ordenar y mostrar resultados
+IFS=$'\n' SORTED_FOLDERS=($(sort <<<"${FOLDERS[*]}"))
+unset IFS
+
+echo "Carpetas encontradas:"
+for FOLDER in "${SORTED_FOLDERS[@]}"; do
+  echo "$FOLDER"
+done
+
+
+============ python =============
 import requests
 import sys
 import json
